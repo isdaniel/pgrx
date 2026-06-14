@@ -1,0 +1,6 @@
+comment = 'PgBoxIn lifetime-bound box demo'
+default_version = '@CARGO_VERSION@'
+module_pathname = '$libdir/pgbox_in_demo'
+relocatable = false
+superuser = false
+schema = 'pgbox_in_demo'

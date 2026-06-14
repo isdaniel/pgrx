@@ -18,6 +18,9 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
 
+mod in_mcx;
+pub use in_mcx::PgBoxIn;
+
 /// Similar to Rust's `Box<T>` type, `PgBox<T>` also represents heap-allocated memory.
 ///
 /// However, it represents a heap-allocated pointer that was allocated by **Postgres's** memory
