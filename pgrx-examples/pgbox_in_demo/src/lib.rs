@@ -32,6 +32,23 @@ fn pgbox_in_alloc_demo() -> i32 {
     })
 }
 
+/// Returns a Postgres-owned `ItemPointerData` by handing a Rust-allocated
+/// `PgBoxIn`'s ownership to Postgres at the `#[pg_extern]` return boundary.
+/// Demonstrates that `PgBoxIn` can serve as a return type for SQL functions
+/// (R1 deliverable).
+///
+/// The `'static` brand on the return type is necessary because the function
+/// signature is at the SQL boundary; see the type's docstring caveat on
+/// `memcx::current_context` and caller-chosen `'curr`.
+#[pg_extern]
+fn pgbox_in_returns_tid() -> PgBoxIn<'static, pg_sys::ItemPointerData, pgrx::pgbox::AllocatedByRust> {
+    memcx::current_context(|cx| {
+        let mut tid: PgBoxIn<'_, pg_sys::ItemPointerData, _> = PgBoxIn::alloc0_in(cx);
+        tid.ip_posid = 42;
+        tid
+    })
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
@@ -93,6 +110,17 @@ mod tests {
         let result: Option<i32> =
             Spi::get_one("SELECT pgbox_in_demo.pgbox_in_alloc_demo()").expect("SPI");
         assert_eq!(result, Some(42));
+    }
+
+    /// R1 round-trip: `pgbox_in_returns_tid()` returns a non-null tid via SPI.
+    /// Proves BoxRet + SqlTranslatable wiring works end-to-end inside a real
+    /// Postgres backend.
+    #[pg_test]
+    fn pgbox_in_return_round_trip() {
+        let was_null: Option<bool> = Spi::get_one(
+            "SELECT pgbox_in_demo.pgbox_in_returns_tid() IS NULL"
+        ).expect("SPI is_null");
+        assert_eq!(was_null, Some(false), "pgbox_in_returns_tid() must not be NULL");
     }
 }
 

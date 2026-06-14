@@ -212,6 +212,43 @@ impl<'mcx, T, A: WhoAllocated> DerefMut for PgBoxIn<'mcx, T, A> {
     }
 }
 
+unsafe impl<'mcx, T, A> pgrx_sql_entity_graph::metadata::SqlTranslatable
+    for PgBoxIn<'mcx, T, A>
+where
+    T: pgrx_sql_entity_graph::metadata::SqlTranslatable,
+    A: WhoAllocated,
+{
+    const TYPE_IDENT: &'static str = T::TYPE_IDENT;
+    const TYPE_ORIGIN: pgrx_sql_entity_graph::metadata::TypeOrigin = T::TYPE_ORIGIN;
+    const ARGUMENT_SQL: Result<
+        pgrx_sql_entity_graph::metadata::SqlMappingRef,
+        pgrx_sql_entity_graph::metadata::ArgumentError,
+    > = T::ARGUMENT_SQL;
+    const RETURN_SQL: Result<
+        pgrx_sql_entity_graph::metadata::ReturnsRef,
+        pgrx_sql_entity_graph::metadata::ReturnsError,
+    > = T::RETURN_SQL;
+}
+
+unsafe impl<'mcx, T> crate::callconv::BoxRet for PgBoxIn<'mcx, T, AllocatedByRust> {
+    unsafe fn box_into<'fcx>(
+        self,
+        fcinfo: &mut crate::callconv::FcInfo<'fcx>,
+    ) -> crate::datum::Datum<'fcx> {
+        let ptr_opt = self.ptr;
+        // Suppress Drop — Postgres takes ownership; pfreeing here would
+        // double-free when the context resets.
+        let _ = core::mem::ManuallyDrop::new(self);
+
+        match ptr_opt {
+            Some(ptr) => unsafe {
+                fcinfo.return_raw_datum(crate::pg_sys::Datum::from(ptr.as_ptr() as *mut u8))
+            },
+            None => fcinfo.return_null(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,5 +384,27 @@ mod tests {
     fn _compile_check_alloc_in_signatures<'mcx>(cx: &crate::memcx::MemCx<'mcx>) {
         let _: PgBoxIn<'mcx, i32, crate::pgbox::AllocatedByRust> = PgBoxIn::alloc_in(cx);
         let _: PgBoxIn<'mcx, i32, crate::pgbox::AllocatedByRust> = PgBoxIn::alloc0_in(cx);
+    }
+
+    /// Compile-time check: `PgBoxIn` implements `SqlTranslatable` so it can
+    /// appear in `#[pg_extern]` signatures. Runtime SQL behavior is exercised
+    /// in pgrx-examples/pgbox_in_demo (Task 3 of the R1 plan).
+    #[allow(dead_code)]
+    fn _compile_check_sql_translatable<'mcx>() {
+        fn _requires_sql_translatable<T: pgrx_sql_entity_graph::metadata::SqlTranslatable>() {}
+        _requires_sql_translatable::<PgBoxIn<'mcx, i32, AllocatedByPostgres>>();
+        _requires_sql_translatable::<PgBoxIn<'mcx, i32, AllocatedByRust>>();
+    }
+
+    /// Compile-time check: `PgBoxIn<_, _, AllocatedByRust>` implements `BoxRet`,
+    /// the trait macros need for `#[pg_extern]` return types. Runtime exercise
+    /// in pgrx-examples/pgbox_in_demo (Task 3 of the R1 plan).
+    #[allow(dead_code)]
+    fn _compile_check_box_ret<'mcx>() {
+        fn _requires_box_ret<T: crate::callconv::BoxRet>() {}
+        _requires_box_ret::<PgBoxIn<'mcx, i32, AllocatedByRust>>();
+        _requires_box_ret::<PgBoxIn<'mcx, crate::pg_sys::ItemPointerData, AllocatedByRust>>();
+        // Deliberately NOT requiring BoxRet for AllocatedByPostgres —
+        // semantics intentionally restricted (see spec §3.3).
     }
 }
