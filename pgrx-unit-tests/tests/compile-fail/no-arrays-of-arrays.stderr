@@ -7,12 +7,12 @@ error[E0277]: the trait bound `FlatArray<'_, i32>: pgrx::array::Element` is not 
   = help: the following other types implement trait `pgrx::array::Element`:
             CStr
             Date
+            JsonText
             Oid
             Point
+            Text
             Time
             TimeWithTimeZone
-            Timestamp
-            TimestampWithTimeZone
           and $N others
   = note: required for `FlatArray<'_, FlatArray<'_, i32>>` to implement `SqlTranslatable`
   = note: 1 redundant requirement hidden
