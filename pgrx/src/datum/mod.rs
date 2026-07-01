@@ -16,7 +16,7 @@
 mod anyarray;
 mod anyelement;
 mod array;
-mod borrow;
+pub mod borrow;
 mod bytea_type;
 mod from;
 pub mod geo;
@@ -39,7 +39,10 @@ pub use crate::datetime::*;
 pub use anyarray::*;
 pub use anyelement::*;
 pub use array::*;
-pub use borrow::*;
+// NB: `Bytea` is intentionally not re-exported here to avoid colliding with
+// `bytea_type::Bytea`. The borrowed varlena element is available as
+// `crate::array::Bytea` (re-exported from the `borrow` module directly).
+pub use borrow::{BorrowDatum, JsonText, Text};
 pub use bytea_type::*;
 pub use from::*;
 pub use inet::*;

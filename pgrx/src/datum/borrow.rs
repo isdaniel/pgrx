@@ -119,7 +119,8 @@ macro_rules! impl_borrow_fixed_len {
 impl_borrow_fixed_len! {
     i8, i16, i32, i64, bool, f32, f64,
     pg_sys::Oid, pg_sys::Point,
-    Date, Time, TimeWithTimeZone, Timestamp, TimestampWithTimeZone
+    Date, Time, TimeWithTimeZone, Timestamp, TimestampWithTimeZone,
+    crate::datum::Uuid
 }
 
 /// It is rare to pass CStr via Datums, but not unheard of
@@ -181,5 +182,91 @@ unsafe impl pgrx_sql_entity_graph::metadata::SqlTranslatable for Text {
         pgrx_sql_entity_graph::metadata::ReturnsError,
     > = Ok(pgrx_sql_entity_graph::metadata::ReturnsRef::One(
         pgrx_sql_entity_graph::metadata::SqlMappingRef::literal("text"),
+    ));
+}
+
+/// A borrowed Postgres `bytea` varlena, usable as a `FlatArray` element.
+#[repr(transparent)]
+pub struct Bytea([u8]);
+
+impl Bytea {
+    /// The raw bytes, excluding the varlena header.
+    pub fn as_bytes(&self) -> &[u8] {
+        // SAFETY: tail is a valid varlena
+        unsafe { crate::varlena::varlena_to_byte_slice(self.0.as_ptr().cast()) }
+    }
+}
+
+unsafe impl DatumPass for Bytea {
+    const PASS: PassBy = PassBy::Ref;
+}
+unsafe impl Element for Bytea {
+    unsafe fn point_from(ptr: ptr::NonNull<u8>) -> ptr::NonNull<Self> {
+        // full varlena size so size_of_val == storage, keeping ArrayIter stride sound
+        let len = unsafe { crate::varlena::varsize_any(ptr.as_ptr().cast()) };
+        unsafe {
+            ptr::NonNull::new_unchecked(
+                ptr::slice_from_raw_parts_mut(ptr.as_ptr(), len) as *mut Self
+            )
+        }
+    }
+}
+
+unsafe impl pgrx_sql_entity_graph::metadata::SqlTranslatable for Bytea {
+    const TYPE_IDENT: &'static str = "Bytea";
+    const TYPE_ORIGIN: pgrx_sql_entity_graph::metadata::TypeOrigin =
+        pgrx_sql_entity_graph::metadata::TypeOrigin::External;
+    const ARGUMENT_SQL: Result<
+        pgrx_sql_entity_graph::metadata::SqlMappingRef,
+        pgrx_sql_entity_graph::metadata::ArgumentError,
+    > = Ok(pgrx_sql_entity_graph::metadata::SqlMappingRef::literal("bytea"));
+    const RETURN_SQL: Result<
+        pgrx_sql_entity_graph::metadata::ReturnsRef,
+        pgrx_sql_entity_graph::metadata::ReturnsError,
+    > = Ok(pgrx_sql_entity_graph::metadata::ReturnsRef::One(
+        pgrx_sql_entity_graph::metadata::SqlMappingRef::literal("bytea"),
+    ));
+}
+
+/// A borrowed Postgres `json` varlena (stored as text), usable as a `FlatArray` element.
+#[repr(transparent)]
+pub struct JsonText([u8]);
+
+impl JsonText {
+    /// The raw JSON text, excluding the varlena header.
+    pub fn as_str(&self) -> &str {
+        // SAFETY: tail is a valid json varlena; Postgres json is UTF-8 in server encodings
+        unsafe { crate::varlena::text_to_rust_str_unchecked(self.0.as_ptr().cast()) }
+    }
+}
+
+unsafe impl DatumPass for JsonText {
+    const PASS: PassBy = PassBy::Ref;
+}
+unsafe impl Element for JsonText {
+    unsafe fn point_from(ptr: ptr::NonNull<u8>) -> ptr::NonNull<Self> {
+        // full varlena size so size_of_val == storage, keeping ArrayIter stride sound
+        let len = unsafe { crate::varlena::varsize_any(ptr.as_ptr().cast()) };
+        unsafe {
+            ptr::NonNull::new_unchecked(
+                ptr::slice_from_raw_parts_mut(ptr.as_ptr(), len) as *mut Self
+            )
+        }
+    }
+}
+
+unsafe impl pgrx_sql_entity_graph::metadata::SqlTranslatable for JsonText {
+    const TYPE_IDENT: &'static str = "JsonText";
+    const TYPE_ORIGIN: pgrx_sql_entity_graph::metadata::TypeOrigin =
+        pgrx_sql_entity_graph::metadata::TypeOrigin::External;
+    const ARGUMENT_SQL: Result<
+        pgrx_sql_entity_graph::metadata::SqlMappingRef,
+        pgrx_sql_entity_graph::metadata::ArgumentError,
+    > = Ok(pgrx_sql_entity_graph::metadata::SqlMappingRef::literal("json"));
+    const RETURN_SQL: Result<
+        pgrx_sql_entity_graph::metadata::ReturnsRef,
+        pgrx_sql_entity_graph::metadata::ReturnsError,
+    > = Ok(pgrx_sql_entity_graph::metadata::ReturnsRef::One(
+        pgrx_sql_entity_graph::metadata::SqlMappingRef::literal("json"),
     ));
 }

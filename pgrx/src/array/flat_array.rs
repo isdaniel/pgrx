@@ -401,6 +401,39 @@ impl serde::Serialize for FlatArray<'_, super::Text> {
     }
 }
 
+impl serde::Serialize for FlatArray<'_, crate::datum::Uuid> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        // Uuid renders as its canonical hyphenated string (Display).
+        s.collect_seq(self.iter().map(|n| n.into_option().map(|u| u.to_string())))
+    }
+}
+
+impl serde::Serialize for FlatArray<'_, super::Bytea> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_seq(self.iter().map(|n| n.into_option().map(|b| b.as_bytes())))
+    }
+}
+
+impl serde::Serialize for FlatArray<'_, super::JsonText> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::Error;
+        use serde_json::value::RawValue;
+        // Emit stored JSON verbatim via RawValue — no Value-tree allocation (zero-copy).
+        let mut items: Vec<Option<&RawValue>> = Vec::with_capacity(self.nelems());
+        for n in self.iter() {
+            match n.into_option() {
+                None => items.push(None),
+                Some(j) => {
+                    let raw: &RawValue =
+                        serde_json::from_str(j.as_str()).map_err(S::Error::custom)?;
+                    items.push(Some(raw));
+                }
+            }
+        }
+        s.collect_seq(items)
+    }
+}
+
 impl<'arr, T> ExactSizeIterator for ArrayIter<'arr, T> where T: ?Sized + Element {}
 impl<'arr, T> FusedIterator for ArrayIter<'arr, T> where T: ?Sized + Element {}
 

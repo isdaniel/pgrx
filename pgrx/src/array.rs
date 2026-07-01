@@ -32,6 +32,9 @@ mod flat_array;
 mod port;
 
 pub use crate::datum::Text;
+pub use crate::datum::borrow::Bytea;
+pub use crate::datum::JsonText;
+pub use crate::datum::Uuid;
 pub use element::Element;
 pub use flat_array::{ArrayAllocError, FlatArray};
 
@@ -438,4 +441,8 @@ unsafe impl Scalar for i32 {
 }
 unsafe impl Scalar for i64 {
     const OID: pg_sys::Oid = pg_sys::INT8OID;
+}
+// SAFETY: Uuid is repr(transparent) [u8; 16] — Copy, no padding, all bitpatterns valid.
+unsafe impl Scalar for crate::datum::Uuid {
+    const OID: pg_sys::Oid = pg_sys::UUIDOID;
 }

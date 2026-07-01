@@ -11,7 +11,7 @@
 use core::ffi::CStr;
 use pgrx::Json;
 use pgrx::PostgresEnum;
-use pgrx::array::{FlatArray, RawArray, Text};
+use pgrx::array::{Bytea, FlatArray, JsonText, RawArray, Text, Uuid};
 use pgrx::memcx::MemCx;
 use pgrx::nullable::Nullable;
 use pgrx::palloc::PBox;
@@ -70,6 +70,21 @@ fn borrow_optional_array_with_default(
 
 #[pg_extern]
 fn borrow_serde_serialize_array(values: &FlatArray<'_, pgrx::array::Text>) -> Json {
+    Json(json! { { "values": values } })
+}
+
+#[pg_extern]
+fn borrow_serde_serialize_uuid_array(values: &FlatArray<'_, pgrx::array::Uuid>) -> Json {
+    Json(json! { { "values": values } })
+}
+
+#[pg_extern]
+fn borrow_serde_serialize_bytea_array(values: &FlatArray<'_, pgrx::array::Bytea>) -> Json {
+    Json(json! { { "values": values } })
+}
+
+#[pg_extern]
+fn borrow_serde_serialize_json_array(values: &FlatArray<'_, pgrx::array::JsonText>) -> Json {
     Json(json! { { "values": values } })
 }
 
@@ -271,6 +286,92 @@ mod tests {
         )?
         .expect("returned json was null");
         assert_eq!(json.0, json! {{"values": ["one", null, "two", "three"]}});
+        Ok(())
+    }
+
+    #[pg_test]
+    fn borrow_test_serde_serialize_uuid_array() -> Result<(), pgrx::spi::Error> {
+        let json = Spi::get_one::<Json>(
+            "SELECT borrow_serde_serialize_uuid_array(ARRAY[\
+            'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::uuid, null, \
+            '00000000-0000-0000-0000-000000000000'::uuid])",
+        )?
+        .expect("returned json was null");
+        assert_eq!(json.0, json! {{"values": [
+            "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", null,
+            "00000000-0000-0000-0000-000000000000"]}});
+        Ok(())
+    }
+
+    #[pg_test]
+    fn borrow_test_serde_serialize_uuid_array_empty() -> Result<(), pgrx::spi::Error> {
+        let json = Spi::get_one::<Json>("SELECT borrow_serde_serialize_uuid_array(ARRAY[]::uuid[])")?
+            .expect("returned json was null");
+        assert_eq!(json.0, json! {{"values": []}});
+        Ok(())
+    }
+
+    #[pg_test]
+    fn borrow_test_serde_serialize_bytea_array() -> Result<(), pgrx::spi::Error> {
+        let json = Spi::get_one::<Json>(
+            "SELECT borrow_serde_serialize_bytea_array(\
+            ARRAY[E'\\\\x0102'::bytea, null, E'\\\\x'::bytea, E'\\\\xff00ff'::bytea])",
+        )?
+        .expect("returned json was null");
+        assert_eq!(json.0, json! {{"values": [[1,2], null, [], [255,0,255]]}});
+        Ok(())
+    }
+
+    #[pg_test]
+    fn borrow_test_serde_serialize_bytea_array_stride() -> Result<(), pgrx::spi::Error> {
+        // 200-byte element (4-byte header) between short elements: mis-stride corrupts the tail.
+        let json = Spi::get_one::<Json>(
+            "SELECT borrow_serde_serialize_bytea_array(\
+            ARRAY[E'\\\\x01'::bytea, decode(repeat('ab', 200), 'hex'), E'\\\\x02'::bytea])",
+        )?
+        .expect("returned json was null");
+        let mid: Vec<u8> = std::iter::repeat(0xab).take(200).collect();
+        assert_eq!(json.0, json! {{"values": [[1], mid, [2]]}});
+        Ok(())
+    }
+
+    #[pg_test]
+    fn borrow_test_serde_serialize_bytea_array_empty() -> Result<(), pgrx::spi::Error> {
+        let json = Spi::get_one::<Json>("SELECT borrow_serde_serialize_bytea_array(ARRAY[]::bytea[])")?
+            .expect("returned json was null");
+        assert_eq!(json.0, json! {{"values": []}});
+        Ok(())
+    }
+
+    #[pg_test]
+    fn borrow_test_serde_serialize_json_array() -> Result<(), pgrx::spi::Error> {
+        let json = Spi::get_one::<Json>(
+            "SELECT borrow_serde_serialize_json_array(\
+                ARRAY['{\"a\":1}'::json, null, '[1,2,3]'::json, '\"hi\"'::json, '42'::json])",
+        )?
+        .expect("returned json was null");
+        assert_eq!(json.0, json! {{"values": [{"a":1}, null, [1,2,3], "hi", 42]}});
+        Ok(())
+    }
+
+    #[pg_test]
+    fn borrow_test_serde_serialize_json_array_stride() -> Result<(), pgrx::spi::Error> {
+        // A >127-byte json element forces a 4-byte varlena header between short ones.
+        let big = format!("[{}]", (0..40).map(|i| i.to_string()).collect::<Vec<_>>().join(","));
+        let json = Spi::get_one::<Json>(&format!(
+            "SELECT borrow_serde_serialize_json_array(ARRAY['1'::json, '{big}'::json, '2'::json])"
+        ))?
+        .expect("returned json was null");
+        let big_val: serde_json::Value = serde_json::from_str(&big).unwrap();
+        assert_eq!(json.0, json! {{"values": [1, big_val, 2]}});
+        Ok(())
+    }
+
+    #[pg_test]
+    fn borrow_test_serde_serialize_json_array_empty() -> Result<(), pgrx::spi::Error> {
+        let json = Spi::get_one::<Json>("SELECT borrow_serde_serialize_json_array(ARRAY[]::json[])")?
+            .expect("returned json was null");
+        assert_eq!(json.0, json! {{"values": []}});
         Ok(())
     }
 
